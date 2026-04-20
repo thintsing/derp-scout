@@ -53,11 +53,11 @@ python .\fofa_derp_acl.py `
 
 ## 读取你手工导出的 JSONL
 
-你给的这种格式可以直接用，一行一个 JSON 对象，例如：
+fofa给的这种格式可以直接用，一行一个 JSON 对象，例如：
 
 ```json
-{"city":"Hong Kong","country":"CN","domain":"","host":"https://103.135.250.99:10443","ip":"103.135.250.99","link":"https://103.135.250.99:10443","org":"DMIT Cloud Services","port":"10443","protocol":"https","title":""}
-{"city":"Hong Kong","country":"CN","domain":"","host":"47.83.14.125","ip":"47.83.14.125","link":"http://47.83.14.125","org":"Alibaba US Technology Co., Ltd.","port":"80","protocol":"http","title":""}
+{"city":"Hong Kong","country":"CN","domain":"","host":"https://1.1.1.1:10443","ip":"1.1.1.1,"link":"https://1.1.1.1:10443","org":"DMIT Cloud Services","port":"10443","protocol":"https","title":""}
+{"city":"Hong Kong","country":"CN","domain":"","host":"2.2.2.2","ip":"2.2.2.2","link":"http://2.2.2.2","org":"Alibaba US Technology Co., Ltd.","port":"80","protocol":"http","title":""}
 ```
 
 保存成 `fofa_export.jsonl` 后直接跑：
