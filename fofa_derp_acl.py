@@ -516,22 +516,21 @@ def sort_key(result: ProbeResult) -> Tuple[int, float, float]:
 
 
 def make_node_name(region_id: int, index: int) -> str:
-    alphabet = "abcdefghijklmnopqrstuvwxyz"
-    suffix = alphabet[index % len(alphabet)]
-    return f"{region_id}{suffix}"
+    return f"{region_id}a"
 
 
 def build_derp_map(
     results: Iterable[ProbeResult],
-    region_id: int,
+    start_region_id: int,
     region_code: str,
     region_name: str,
     omit_default_regions: bool,
     lowercase_keys: bool,
 ) -> Dict[str, Any]:
     picked = [item for item in sorted(results, key=sort_key) if item.selected]
-    nodes: List[Dict[str, Any]] = []
+    regions: Dict[str, Any] = {}
     for idx, item in enumerate(picked):
+        region_id = start_region_id + idx
         node: Dict[str, Any] = {
             "Name": make_node_name(region_id, idx),
             "RegionID": region_id,
@@ -542,18 +541,16 @@ def build_derp_map(
             node["IPv4"] = item.ip
         if item.stun_ok:
             node["STUNPort"] = 3478
-        nodes.append(node)
+        regions[str(region_id)] = {
+            "RegionID": region_id,
+            "RegionCode": f"{region_code}-{region_id}",
+            "RegionName": f"{region_name} {region_id}",
+            "Nodes": [node],
+        }
 
     derp_map = {
         "OmitDefaultRegions": omit_default_regions,
-        "Regions": {
-            str(region_id): {
-                "RegionID": region_id,
-                "RegionCode": region_code,
-                "RegionName": region_name,
-                "Nodes": nodes,
-            }
-        },
+        "Regions": regions,
     }
     if lowercase_keys:
         return lowercase_keys_deep({"derpMap": derp_map})
@@ -665,7 +662,7 @@ def main() -> int:
 
     policy = build_derp_map(
         results=results,
-        region_id=args.region_id,
+        start_region_id=args.region_id,
         region_code=args.region_code,
         region_name=args.region_name,
         omit_default_regions=args.omit_default_regions,
