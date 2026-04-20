@@ -1,129 +1,172 @@
 # derp-scout
 
-用 Python 从 FOFA 搜索疑似 Tailscale DERP 节点，做基础可用性探测，然后生成可直接复制到 Tailscale tailnet policy 里的 `derpMap` 片段。
+`derp-scout` 用于从 FOFA 查询结果或手工导出的 JSON/JSONL 数据中筛选候选 Tailscale DERP 节点，探测可用性与延迟，并生成可直接粘贴到 Tailscale tailnet policy 中的 `derpMap` 片段。
 
-## 功能
+## 它做什么
 
-- 调 FOFA API 查询候选节点
-- 或读取你手工导出的 FOFA JSON / JSONL 结果
-- 并发探测 `TCP 443`
-- 校验 `TLS` 握手和证书可验证性
-- 做 HTTPS 探针，默认依次尝试 `/derp/probe` 和 `/`
-- 可选做 `UDP 3478` STUN 探测
-- 生成：
-  - 探测结果 JSON
-  - 可复制粘贴的 `derpMap` 片段
+- 支持两种输入源
+  - `FOFA API`
+  - `本地导出文件`（JSON 或 JSONL）
+- 对候选节点执行基础探测
+  - `TCP 443`
+  - `TLS` 握手和证书校验
+  - `HTTPS` 探针，默认尝试 `/derp/probe`，失败后回退到 `/`
+  - 可选 `UDP 3478` STUN 探测
+- 按条件筛选
+  - 默认只保留延迟 `<= 100ms` 的节点
+- 生成两类输出
+  - 完整探测报告 JSON
+  - 可直接复制到 Tailscale policy 的 `derpMap`
+
+## 重要说明
+
+每个筛选通过的第三方 DERP 节点都会生成独立的 region。
+
+也就是：
+
+- 第 1 个节点 `RegionID = 900`
+- 第 2 个节点 `RegionID = 901`
+- 第 3 个节点 `RegionID = 902`
+
+这样不会把互不相关的第三方 DERP 节点错误地放进同一个 region。
 
 ## 依赖
 
 - Python 3.9+
-- FOFA API 凭据
+- 如果使用 API 模式，需要 FOFA 凭据
 
-脚本只使用标准库，没有第三方依赖。
+脚本只使用 Python 标准库，没有第三方依赖。
 
-## 支持的输入方式
+## 输入方式
 
-- `FOFA API`
-  - 适合你有额度时直接查询
-- `本地导出文件`
-  - 适合你现在这种没有 API 额度、手工从网页版导出结果的场景
+### 1. FOFA API 模式
 
-## 环境变量
+适合有 FOFA API 额度时直接查询。
+
+环境变量示例：
 
 ```powershell
 $env:FOFA_EMAIL="you@example.com"
 $env:FOFA_KEY="your_fofa_api_key"
 ```
 
-## 最小示例
+执行示例：
 
 ```powershell
 python .\fofa_derp_acl.py `
   --query 'body="Tailscale" && body="DERP server" && country="HK"' `
   --size 30 `
   --region-id 900 `
-  --region-code "cn-derp" `
-  --region-name "CN DERP" `
+  --region-code "hk-derp" `
+  --region-name "HK DERP" `
   --max-latency-ms 100 `
-  --json-out .\report.json `
-  --policy-out .\derpmap.json
+  --json-out .\report_hk.json `
+  --policy-out .\derpmap_hk.json
 ```
 
-如果你的环境里不是 `python`，把命令替换成实际 Python 启动方式，例如 `python3`。
+如果你的环境里不是 `python`，请替换成实际的 Python 启动命令。
 
-## 读取你手工导出的 JSONL
+### 2. 本地文件模式
 
-fofa给的这种格式可以直接用，一行一个 JSON 对象，例如：
+适合没有 API 额度、从网页版手工导出结果时使用。
+
+支持格式：
+
+- `JSONL`
+  - 一行一个 JSON 对象
+- `JSON`
+  - 顶层是数组
+
+JSONL 示例：
 
 ```json
-{"city":"Hong Kong","country":"CN","domain":"","host":"https://1.1.1.1:10443","ip":"1.1.1.1,"link":"https://1.1.1.1:10443","org":"DMIT Cloud Services","port":"10443","protocol":"https","title":""}
-{"city":"Hong Kong","country":"CN","domain":"","host":"2.2.2.2","ip":"2.2.2.2","link":"http://2.2.2.2","org":"Alibaba US Technology Co., Ltd.","port":"80","protocol":"http","title":""}
+{"city":"Hong Kong","country":"CN","domain":"","host":"https://derp-a.example.com:443","ip":"203.0.113.10","link":"https://derp-a.example.com:443","org":"Example Cloud","port":"443","protocol":"https","title":""}
+{"city":"Hong Kong","country":"CN","domain":"","host":"https://derp-b.example.com:443","ip":"203.0.113.11","link":"https://derp-b.example.com:443","org":"Example Hosting","port":"443","protocol":"https","title":""}
 ```
 
-保存成 `fofa_export.jsonl` 后直接跑：
+执行示例：
 
 ```powershell
 python .\fofa_derp_acl.py `
-  --input-file .\fofa_export.jsonl `
+  --input-file .\fofa_export_hk.jsonl `
   --region-id 900 `
   --region-code "hk-derp" `
   --region-name "HK DERP" `
   --max-latency-ms 100 `
-  --json-out .\report.json `
-  --policy-out .\derpmap.json
+  --json-out .\report_hk.json `
+  --policy-out .\derpmap_hk.json
 ```
 
-脚本也支持标准 JSON 数组文件。
+## 常用筛选规则
 
-## 更严格一点的筛选
+默认筛选条件：
+
+- `TCP 443` 可连
+- `TLS` 证书校验通过
+- `HTTPS` 探针成功
+- 延迟不高于 `100ms`
+
+可选更严格模式：
 
 ```powershell
 python .\fofa_derp_acl.py `
-  --query 'body="Tailscale" && body="DERP server" && country="HK"' `
+  --input-file .\fofa_export_hk.jsonl `
+  --region-id 900 `
+  --region-code "hk-derp" `
+  --region-name "HK DERP" `
   --max-latency-ms 100 `
   --require-http-hint `
   --require-stun `
   --omit-default-regions `
-  --json-out .\report.json `
-  --policy-out .\derpmap.json
+  --json-out .\report_hk.json `
+  --policy-out .\derpmap_hk.json
 ```
 
 ## 常用参数
 
-- `--query`
-  - FOFA 查询语句，默认是 `body="Tailscale" && body="DERP server" && country="HK"`
 - `--input-file`
   - 从本地 JSON / JSONL 文件读取候选，不调用 FOFA API
+- `--query`
+  - FOFA 查询语句
+  - 默认值：`body="Tailscale" && body="DERP server" && country="HK"`
 - `--size`
-  - 拉多少条 FOFA 结果
+  - FOFA API 每次请求拉取的结果数
 - `--timeout`
-  - 每个探针的超时秒数
-- `--max-latency-ms`
-  - 只保留延迟不高于这个阈值的节点，默认 `100`
+  - 单个探针超时秒数
 - `--workers`
-  - 并发数
+  - 并发探测线程数
+- `--max-latency-ms`
+  - 只保留延迟不高于该值的节点，默认 `100`
 - `--require-http-hint`
-  - 只有 HTTP 返回里带明显 DERP 特征时才纳入最终结果
+  - 只有 HTTP 返回里包含明显 DERP 特征时才纳入最终结果
 - `--require-stun`
-  - 只有 UDP 3478 STUN 成功时才纳入最终结果
+  - 只有 UDP 3478 STUN 探测成功时才纳入最终结果
 - `--allow-ip-hostname`
-  - 允许把 IP 字面量直接写进 `HostName`
-  - 默认关闭，因为这类节点常常会卡在 TLS 证书校验上，不适合“直接复制粘贴”
+  - 允许 IP 字面量直接写入 `HostName`
+  - 默认关闭，因为这类节点通常会卡在 TLS 证书校验
 - `--omit-default-regions`
   - 生成 `OmitDefaultRegions: true`
-- `--lowercase-keys`
-  - 把输出里的键名改成小写风格，兼容部分策略示例
+- `--json-out`
+  - 输出完整探测报告
+- `--policy-out`
+  - 输出 `derpMap` 片段
 
-## 输出说明
+## 输出文件
 
-终端里会输出每个候选的探测结果摘要，例如：
+### `report_hk.json`
 
-- `PASS`
-  - 可以直接进入 `derpMap`
-- `SKIP`
-  - 不建议直接写入策略，原因会显示在下一行
+完整探测报告，包含：
 
-生成的 `derpMap` 片段示例：
+- 输入来源
+- 探测参数
+- 每个候选节点的探测结果
+- 最终生成的 policy 片段
+
+### `derpmap_hk.json`
+
+只包含可直接复制到 Tailscale policy 的 `derpMap`。
+
+示例：
 
 ```json
 {
@@ -132,15 +175,30 @@ python .\fofa_derp_acl.py `
     "Regions": {
       "900": {
         "RegionID": 900,
-        "RegionCode": "cn-derp",
-        "RegionName": "CN DERP",
+        "RegionCode": "hk-derp-900",
+        "RegionName": "HK DERP 900",
         "Nodes": [
           {
             "Name": "900a",
             "RegionID": 900,
-            "HostName": "example.com",
+            "HostName": "derp-a.example.com",
             "DERPPort": 443,
-            "IPv4": "3.3.3.3",
+            "IPv4": "203.0.113.10",
+            "STUNPort": 3478
+          }
+        ]
+      },
+      "901": {
+        "RegionID": 901,
+        "RegionCode": "hk-derp-901",
+        "RegionName": "HK DERP 901",
+        "Nodes": [
+          {
+            "Name": "901a",
+            "RegionID": 901,
+            "HostName": "derp-b.example.com",
+            "DERPPort": 443,
+            "IPv4": "203.0.113.11",
             "STUNPort": 3478
           }
         ]
@@ -150,27 +208,20 @@ python .\fofa_derp_acl.py `
 }
 ```
 
-## 复制到 Tailscale 的位置
+## 如何放进 Tailscale policy
 
-把生成的 `derpMap` 合并到你的 tailnet policy file 顶层对象里。
+把生成的 `derpMap` 合并到 tailnet policy 顶层对象中。
 
-## 注意
+如果你已经有 `derpMap`，请用新生成的内容整体替换原来的 `derpMap` 字段，而不是手工拼接旧节点。
 
-- 这个工具做的是“工程上够用”的可达性筛选，不是完整的 Tailscale 协议级验收。
-- 默认会要求：
-  - `TCP 443` 能连
-  - `TLS` 证书校验通过
-  - `HTTPS` 探针有响应
-  - 延迟不高于 `100ms`
-- 如果你导出的结果里是 `http://...:80` 这种资产，脚本会照样探测，但大概率会因为不是有效 DERP HTTPS 节点而被过滤掉。
-- 如果 FOFA 返回的是 IP 而不是域名，大概率会因为证书校验不通过被过滤掉，这通常是符合预期的。
-- Tailscale 官方文档确认可以在 tailnet policy 中使用 `derpMap` 自定义 DERP；官方默认 DERP map 可从：
-  - [Tailscale DERP servers docs](https://tailscale.com/docs/reference/derp-servers)
-  - [Default DERP map](https://controlplane.tailscale.com/derpmap/default)
+## 注意事项
 
-## 建议的下一步
+- 这是工程化筛选工具，不是完整的 Tailscale 协议级兼容性验证工具。
+- 如果导出结果里有 `http://...:80` 之类的资产，脚本会读取，但通常会在探测阶段被过滤掉。
+- 如果候选记录只有 IP、没有可校验证书的域名，通常也会被过滤掉。
+- 第三方 DERP 即使延迟低，也不代表长期稳定或互通质量可靠。
 
-如果你希望，我还可以继续帮你补两件事：
+## 参考
 
-1. 加一个 `--country/--city` 之类的地理过滤参数
-2. 加一个“把多个可用节点按国家/城市自动拆成多个 region”的模式
+- [Tailscale DERP servers docs](https://tailscale.com/docs/reference/derp-servers)
+- [Default DERP map](https://controlplane.tailscale.com/derpmap/default)
