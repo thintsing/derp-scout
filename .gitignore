@@ -1,0 +1,13 @@
+.idea/
+__pycache__/
+*.pyc
+
+# Local FOFA exports and generated probe outputs
+*.jsonl
+report*.json
+derpmap*.json
+
+# Local env or secret files
+.env
+.env.*
+*.local
